@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Batch Instrumental Test</title>
+</head>
+<body>
+  <pre id="output">Booting essentia...</pre>
+  <script src="../node_modules/essentia.js/dist/essentia-wasm.web.js"></script>
+  <script src="../node_modules/essentia.js/dist/essentia.js-extractor.js"></script>
+  <script>
+    const MIN_SANE = 60;
+    const MAX_SANE = 180;
+    const MUSICAL_MAX = 200;
+    function correctTempo(rawTempo) {
+      let corrected = rawTempo;
+      let wasCorrected = false;
+      while (corrected > MAX_SANE) { corrected /= 2; wasCorrected = true; }
+      while (corrected < MIN_SANE && corrected > 0) { corrected *= 2; wasCorrected = true; }
+      if (corrected < MIN_SANE && corrected > 0) { corrected *= 2; wasCorrected = true; }
+      const rounded = Math.round(corrected);
+      // BIDIRECTIONAL ambiguity: surface both double and half if plausible
+      const doubled = Math.round(corrected * 2);
+      const halved = Math.round(corrected / 2);
+      let alternateTempo;
+      if (!wasCorrected) {
+        if (doubled <= MUSICAL_MAX && doubled !== rounded) alternateTempo = doubled;
+        else if (halved >= MIN_SANE && halved !== rounded) alternateTempo = halved;
+      }
+      return {
+        tempo: rounded,
+        rawTempo: Math.round(rawTempo * 100) / 100,
+        wasCorrected,
+        alternateTempo
+      };
+    }
+  </script>
+  <script>
+    async function loadF32(url) {
+      const resp = await fetch(url);
+      const buffer = await resp.arrayBuffer();
+      return new Float32Array(buffer);
+    }
+
+    function toVector(wasm, arr) {
+      const vec = new wasm.VectorFloat();
+      for (let i = 0; i < arr.length; i++) vec.push_back(arr[i]);
+      return vec;
+    }
+
+    async function analyzeFile(wasm, ex, filename, sampleRate) {
+      const arr = await loadF32("./fixtures/" + filename);
+      const duration = arr.length / sampleRate;
+      
+      // Use 30s middle sample for consistency
+      const sampleLen = Math.min(arr.length, sampleRate * 30);
+      const start = Math.floor((arr.length - sampleLen) / 2);
+      const sample = arr.subarray(start, start + sampleLen);
+      
+      const sig = toVector(wasm, sample);
+      
+      const tempoRaw = ex.PercivalBpmEstimator(sig).bpm;
+      const tempo = correctTempo(tempoRaw);
+      const keyInfo = ex.KeyExtractor(sig, "edma");
+      
+      return {
+        filename: filename.replace('.f32', ''),
+        bpm: tempo.tempo,
+        rawBpm: tempo.rawTempo,
+        alternateTempo: tempo.alternateTempo,
+        wasCorrected: tempo.wasCorrected,
+        key: keyInfo.key,
+        scale: keyInfo.scale,
+        strength: keyInfo.strength,
+        confidence: keyInfo.strength,
+        duration: Math.round(duration * 100) / 100,
+        sampleRate
+      };
+    }
+
+    async function run() {
+      const el = document.getElementById("output");
+      try {
+        const wasm = await EssentiaWASM();
+        const ex = new EssentiaExtractor(wasm, false);
+        
+        const results = { version: ex.version, tests: {}, loaded: true };
+        const files = ["user_test.f32", "beat2.f32", "beat3.f32"];
+        
+        for (const f of files) {
+          results.tests[f.replace('.f32', '')] = await analyzeFile(wasm, ex, f, 48000);
+        }
+        
+        el.textContent = JSON.stringify(results, null, 2);
+      } catch (err) {
+        el.textContent = JSON.stringify(
+          { loaded: false, error: err.message, stack: err.stack },
+          null, 2
+        );
+      }
+    }
+    run();
+  </script>
+</body>
+</html>

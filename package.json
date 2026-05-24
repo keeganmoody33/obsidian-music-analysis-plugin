@@ -1,0 +1,35 @@
+{
+  "name": "obsidian-music-analysis",
+  "version": "1.0.0",
+  "description": "Offline music analysis plugin for Obsidian — tempo, key, duration via WASM",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "NODE_ENV=production node esbuild.config.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "version": "node version-bump.mjs && git add manifest.json versions.json"
+  },
+  "keywords": [
+    "obsidian",
+    "plugin",
+    "music",
+    "audio",
+    "bpm",
+    "key"
+  ],
+  "author": "Keegan Moody",
+  "license": "AGPL-3.0",
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "esbuild": "0.21.5",
+    "jsdom": "^24.0.0",
+    "obsidian": "latest",
+    "playwright": "^1.60.0",
+    "typescript": "5.5.3",
+    "vitest": "1.6.0"
+  },
+  "dependencies": {
+    "essentia.js": "0.1.3"
+  }
+}
