@@ -1,5 +1,5 @@
 // main.ts — Obsidian plugin entry point (Slice 2: confirm-first UX)
-import { Plugin, Notice, TFile, MarkdownView } from "obsidian";
+import { Plugin, Notice, TFile, TAbstractFile, MarkdownView, Menu } from "obsidian";
 import { sha256 } from "./sha256";
 import { injectFrontmatter } from "./yaml-injector";
 import { AnalysisResult } from "./analysis-engine";
@@ -57,6 +57,24 @@ export default class MusicAnalysisPlugin extends Plugin {
       "music-dashboard",
       (source, el, ctx) => dashboardProcessor.process(source, el, ctx)
     );
+
+    // Right-click on audio files in file explorer → "Analyze audio"
+    this.registerEvent(
+      this.app.workspace.on(
+        "file-menu",
+        (menu: Menu, file: TAbstractFile) => {
+          if (!(file instanceof TFile)) return;
+          if (!this.isAudioFile(file)) return;
+
+          menu.addItem((item) =>
+            item
+              .setTitle("Analyze audio")
+              .setIcon("music")
+              .onClick(() => this.runAnalysisForFile(file))
+          );
+        }
+      )
+    );
   }
 
   onunload() {
@@ -70,15 +88,26 @@ export default class MusicAnalysisPlugin extends Plugin {
       new Notice("Select an audio file (mp3/wav/flac)");
       return;
     }
+    await this.runAnalysisForFile(file);
+  }
 
+  /**
+   * Core analysis for a specific audio file.
+   * Creates / updates the companion .md note and opens it.
+   */
+  private async runAnalysisForFile(file: TFile) {
     const arrayBuf = await this.app.vault.readBinary(file);
     const hash = await sha256(arrayBuf);
 
     const notePath = `${file.path}.md`;
-    const cached = analysisCache.get(notePath);
+    const cachedNoteFile = this.app.vault.getAbstractFileByPath(notePath);
+    const cacheKey = cachedNoteFile ? notePath : file.path;
+
+    const cached = analysisCache.get(cacheKey);
     if (cached && cached.hash === hash) {
       new Notice(`Cache hit: ${cached.result.tempo} BPM, ${cached.result.key}`);
       await this.writeNote(notePath, cached.result, file.name);
+      await this.openNote(notePath);
       return;
     }
 
@@ -90,12 +119,23 @@ export default class MusicAnalysisPlugin extends Plugin {
       return;
     }
 
-    analysisCache.set(notePath, { hash, result, timestamp: Date.now() });
+    analysisCache.set(cacheKey, { hash, result, timestamp: Date.now() });
 
     new Notice(
       `Done: ${result.tempo} BPM${result.alternateTempo ? " (or " + result.alternateTempo + "?)" : ""}, ${result.key}`
     );
     await this.writeNote(notePath, result, file.name);
+    await this.openNote(notePath);
+  }
+
+  private async openNote(notePath: string) {
+    const noteFile = this.app.vault.getFileByPath(notePath);
+    if (!noteFile) {
+      console.warn("[MAM] Could not open note — file not found:", notePath);
+      return;
+    }
+    const leaf = this.app.workspace.getLeaf();
+    await leaf.openFile(noteFile);
   }
 
   /**
@@ -172,7 +212,7 @@ export default class MusicAnalysisPlugin extends Plugin {
   }
 
   private isAudioFile(file: TFile): boolean {
-    return /\.(mp3|wav|flac|aif|ogg|m4a)$/i.test(file.extension);
+    return /^(mp3|wav|flac|aif|ogg|m4a)$/i.test(file.extension);
   }
 
   private async analyzeInWorker(
@@ -204,7 +244,10 @@ export default class MusicAnalysisPlugin extends Plugin {
     const durationStr = this.formatDuration(result.duration);
     const keyDisplay = result.relativeKey ? `${result.key} / ${result.relativeKey}` : result.key;
 
-    const content = injectFrontmatter("", {
+    // Body: auto-inject music-dashboard code block so the dashboard renders immediately
+    const body = "\n```music-dashboard\n```\n";
+
+    const content = injectFrontmatter(body, {
       audio_source: sourceFile,
       key: keyDisplay,
       key_confirmed: false,
