@@ -1,0 +1,11 @@
+{
+  "id": "obsidian-music-analysis",
+  "name": "Music Analysis",
+  "version": "0.1.3-test",
+  "minAppVersion": "0.15.0",
+  "description": "Offline music analysis: key, tempo, duration. Fully local — no network.",
+  "author": "Keegan Moody",
+  "authorUrl": "https://lecturesfrom.com",
+  "fundingUrl": "",
+  "isDesktopOnly": false
+}

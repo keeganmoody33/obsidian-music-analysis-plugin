@@ -230,7 +230,7 @@ export default class MusicAnalysisPlugin extends Plugin {
       // Obsidian's renderer blocks `new Worker(filePath)` because the
       // app://<hash>/ path is cross-origin from app://obsidian.md.
       // A blob: URL is same-origin, bypassing the SecurityError.
-      const workerPath = `${this.manifest.dir}/dist/worker.js`;
+      const workerPath = `${this.manifest.dir}/worker.js`;
       const workerSource = await this.app.vault.adapter.read(workerPath);
       const blob = new Blob([workerSource], { type: "application/javascript" });
       const blobUrl = URL.createObjectURL(blob);
