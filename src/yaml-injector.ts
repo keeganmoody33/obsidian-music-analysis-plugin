@@ -16,7 +16,7 @@ export interface AudioMetadata {
   duration?: string;
   total_bars?: number;
   audio_start_offset?: number;
-  analysis_confidence?: number;  // DEPRECATED — do not display as trust metric
+  analysis_confidence?: number; // DEPRECATED — do not display as trust metric
   structure?: Array<{
     segment: string;
     bars: [number, number];
@@ -32,19 +32,66 @@ export interface AudioMetadata {
   license_status?: string;
 }
 
-function serializeValue(val: unknown): string {
+function serializeValue(val: unknown, indent = 0): string {
+  const pad = "  ".repeat(indent);
+
   if (Array.isArray(val)) {
     if (val.length === 0) return "[]";
-    return "\n" + val.map((v) => `  - "${String(v).replace(/"/g, '\\"')}"`).join("\n");
-  }
-  if (typeof val === "string") {
-    if (val === "" || val.includes(":") || val.includes("\n")) {
-      return `"${val.replace(/"/g, '\\"')}"`;
+    // If array of objects (structure), emit indented object form
+    if (val.every((v) => v !== null && typeof v === "object" && !Array.isArray(v))) {
+      return (
+        "\n" +
+        val
+          .map((item) => {
+            const entries = Object.entries(item as Record<string, unknown>)
+              .map(([k2, v2]) => `${pad}    ${k2}: ${serializeValue(v2, indent + 2)}`)
+              .join("\n");
+            return `${pad}  -\n${entries}`;
+          })
+          .join("\n")
+      );
     }
-    return val;
+    // Array of primitives
+    return "\n" + val.map((v) => `${pad}  - ${serializeScalar(v)}`).join("\n");
   }
+
+  if (typeof val === "object" && val !== null) {
+    const entries = Object.entries(val as Record<string, unknown>)
+      .map(([k2, v2]) => `${pad}  ${k2}: ${serializeValue(v2, indent + 1)}`);
+    return "\n" + entries.join("\n");
+  }
+
+  return serializeScalar(val);
+}
+
+/** Quote a scalar if it contains YAML-special characters. */
+function serializeScalar(val: unknown): string {
+  if (val === null || val === undefined) return "";
+  if (typeof val === "boolean") return String(val);
   if (typeof val === "number") return String(val);
-  return JSON.stringify(val);
+
+  const str = String(val);
+  // Must quote strings that contain :, #, newline, start with yaml indicators,
+  // contain quotes, or look like booleans/numbers.
+  const needsQuotes =
+    str === "" ||
+    str.includes(":") ||
+    str.includes("#") ||
+    str.includes("\n") ||
+    str.includes('"') ||
+    str.startsWith("-") ||
+    str.startsWith("[") ||
+    str.startsWith("{") ||
+    str === "true" ||
+    str === "false" ||
+    str === "null" ||
+    str === "~";
+
+  if (needsQuotes) {
+    // Double-quote with escaping
+    return `"${str.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+  }
+  return str;
 }
 
 export function injectFrontmatter(
