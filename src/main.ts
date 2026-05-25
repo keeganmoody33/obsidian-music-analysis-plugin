@@ -96,36 +96,42 @@ export default class MusicAnalysisPlugin extends Plugin {
    * Creates / updates the companion .md note and opens it.
    */
   private async runAnalysisForFile(file: TFile) {
-    const arrayBuf = await this.app.vault.readBinary(file);
-    const hash = await sha256(arrayBuf);
+    try {
+      const arrayBuf = await this.app.vault.readBinary(file);
+      const hash = await sha256(arrayBuf);
 
-    const notePath = `${file.path}.md`;
-    const cachedNoteFile = this.app.vault.getAbstractFileByPath(notePath);
-    const cacheKey = cachedNoteFile ? notePath : file.path;
+      const notePath = `${file.path}.md`;
+      const cachedNoteFile = this.app.vault.getAbstractFileByPath(notePath);
+      const cacheKey = cachedNoteFile ? notePath : file.path;
 
-    const cached = analysisCache.get(cacheKey);
-    if (cached && cached.hash === hash) {
-      new Notice(`Cache hit: ${cached.result.tempo} BPM, ${cached.result.key}`);
-      await this.writeNote(notePath, cached.result, file.name);
+      const cached = analysisCache.get(cacheKey);
+      if (cached && cached.hash === hash) {
+        new Notice(`Cache hit: ${cached.result.tempo} BPM, ${cached.result.key}`);
+        await this.writeNote(notePath, cached.result, file.name);
+        await this.openNote(notePath);
+        return;
+      }
+
+      new Notice("Analyzing audio...");
+
+      const result = await this.analyzeInWorker(arrayBuf, file.name);
+      if (result.error) {
+        new Notice(`Analysis failed: ${result.error}`);
+        return;
+      }
+
+      analysisCache.set(cacheKey, { hash, result, timestamp: Date.now() });
+
+      new Notice(
+        `Done: ${result.tempo} BPM${result.alternateTempo ? " (or " + result.alternateTempo + "?)" : ""}, ${result.key}`
+      );
+      await this.writeNote(notePath, result, file.name);
       await this.openNote(notePath);
-      return;
+    } catch (err: any) {
+      const message = err?.message || String(err);
+      console.error("[MusicAnalysis] runAnalysisForFile error:", err);
+      new Notice(`Analysis error: ${message}`);
     }
-
-    new Notice("Analyzing audio...");
-
-    const result = await this.analyzeInWorker(arrayBuf, file.name);
-    if (result.error) {
-      new Notice(`Analysis failed: ${result.error}`);
-      return;
-    }
-
-    analysisCache.set(cacheKey, { hash, result, timestamp: Date.now() });
-
-    new Notice(
-      `Done: ${result.tempo} BPM${result.alternateTempo ? " (or " + result.alternateTempo + "?)" : ""}, ${result.key}`
-    );
-    await this.writeNote(notePath, result, file.name);
-    await this.openNote(notePath);
   }
 
   private async openNote(notePath: string) {
@@ -220,11 +226,20 @@ export default class MusicAnalysisPlugin extends Plugin {
     fileName: string,
   ): Promise<AnalysisResult> {
     if (!this.worker) {
-      // The worker JS is bundled to dist/worker.js by esbuild
-      const workerPath = this.app.vault.adapter.getResourcePath(
-        `${this.manifest.dir}/dist/worker.js`,
-      );
-      this.worker = new Worker(workerPath);
+      // Read bundled worker source and instantiate from a blob URL.
+      // Obsidian's renderer blocks `new Worker(filePath)` because the
+      // app://<hash>/ path is cross-origin from app://obsidian.md.
+      // A blob: URL is same-origin, bypassing the SecurityError.
+      const workerPath = `${this.manifest.dir}/dist/worker.js`;
+      const workerSource = await this.app.vault.adapter.read(workerPath);
+      const blob = new Blob([workerSource], { type: "application/javascript" });
+      const blobUrl = URL.createObjectURL(blob);
+      try {
+        this.worker = new Worker(blobUrl);
+      } finally {
+        // Revoke immediately — the Worker keeps an internal reference.
+        URL.revokeObjectURL(blobUrl);
+      }
     }
 
     return new Promise((resolve, reject) => {

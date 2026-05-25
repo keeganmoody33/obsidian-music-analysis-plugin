@@ -1,6 +1,6 @@
 {
   "name": "obsidian-music-analysis",
-  "version": "1.0.0",
+  "version": "0.1.3-test",
   "description": "Offline music analysis plugin for Obsidian — tempo, key, duration via WASM",
   "main": "main.js",
   "scripts": {
