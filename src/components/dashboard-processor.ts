@@ -18,7 +18,7 @@ import { KeyControl, KeyControlState, KeyControlCallbacks } from "./key-control"
 import { StructureTimeline, StructureSegment } from "./structure-timeline";
 import { TunerNeedle } from "./tuner-needle";
 import { CamelotWheel, keyNameToCamelot } from "./camelot-wheel";
-import { injectFrontmatter } from "../yaml-injector";
+import { injectFrontmatter, parseFrontmatter } from "../yaml-injector";
 
 export interface DashboardFrontmatter {
   sourceFile: string;          // active file path
@@ -193,24 +193,7 @@ export class MusicDashboardProcessor {
   }
 
   private parseFrontmatter(raw: string, sourcePath: string): DashboardFrontmatter {
-    const fm: Record<string, unknown> = {};
-    const match = /^---\s*\n([\s\S]*?)\n---\s*\n?/.exec(raw);
-    if (match) {
-      for (const line of match[1].split("\n")) {
-        const idx = line.indexOf(":");
-        if (idx > 0) {
-          const k = line.slice(0, idx).trim();
-          const v = line.slice(idx + 1).trim();
-          if (!isNaN(Number(v)) && v !== "" && !v.includes(" ")) {
-            (fm as any)[k] = Number(v);
-          } else if (v === "true" || v === "false") {
-            (fm as any)[k] = v === "true";
-          } else {
-            (fm as any)[k] = v.replace(/^["']|["']$/g, "");
-          }
-        }
-      }
-    }
+    const fm = parseFrontmatter(raw);
 
     if (!fm.tempo && !fm.key) {
       throw new Error("No analysis data in frontmatter");
@@ -219,10 +202,6 @@ export class MusicDashboardProcessor {
     let structure: DashboardFrontmatter["structure"] = undefined;
     if (Array.isArray(fm.structure)) {
       structure = fm.structure as any;
-    } else if (typeof fm.structure === "string" && fm.structure.startsWith("[") && fm.structure.endsWith("]")) {
-      try {
-        structure = JSON.parse(fm.structure);
-      } catch { /* no-op */ }
     }
 
     return {
