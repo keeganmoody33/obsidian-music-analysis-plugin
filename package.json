@@ -22,12 +22,12 @@
   "license": "AGPL-3.0",
   "devDependencies": {
     "@types/node": "^20.14.0",
-    "esbuild": "0.21.5",
+    "esbuild": "0.28.0",
     "jsdom": "^24.0.0",
     "obsidian": "latest",
     "playwright": "^1.60.0",
     "typescript": "5.5.3",
-    "vitest": "1.6.0"
+    "vitest": "4.1.7"
   },
   "dependencies": {
     "essentia.js": "0.1.3",
